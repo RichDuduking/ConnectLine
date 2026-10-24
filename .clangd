@@ -1,0 +1,4 @@
+CompileFlags:
+  CompilationDatabase: builds/GCC 13.1.0 x86_64-w64-mingw32/Debug
+  Add:
+    - --target=x86_64-w64-windows-gnu

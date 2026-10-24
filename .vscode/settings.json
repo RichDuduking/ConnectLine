@@ -1,0 +1,27 @@
+{
+"cmake.options.statusBarVisibility": "visible",
+    "cmake.buildDirectory": "${workspaceFolder}/builds/${buildKit}/${buildType}",
+
+    // 强制使用 MinGW Makefiles 生成器：否则在没装 Visual Studio 的机器上，
+    // CMake 会退回默认的 NMake/VS 生成器并因缺少 nmake/MSVC 而"配置失败"
+    "cmake.generator": "MinGW Makefiles",
+
+    // 1. 引导 CMake 找到刚刚安装的 Qt MinGW 编译器路径
+    // 注意：请检查你 E:\Qt6.8.3\Tools\ 下实际的 mingw 文件夹名称（如 mingw1310_64 或 mingw1120_64）
+    "cmake.additionalCompilerSearchDirs": [
+        "E:/Qt6.8.3/Tools/mingw1310_64/bin"
+    ],
+    // 2. 告诉 CMake 你的 Qt 6.8.3 MinGW 库路径
+    "cmake.configureArgs": [
+        "-DCMAKE_PREFIX_PATH=E:/Qt6.8.3/6.8.3/mingw_64"
+    ],
+
+    // 3. 配置代码头文件跳转与提示路径（解决 #include <QWidget> 报红）
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/**",
+        "E:/Qt6.8.3/6.8.3/mingw_64/include/**"
+    ],
+
+    // 4. 配置双击 .ui 文件时调用的 Designer 路径
+    "qt.designerPath": "E:/Qt6.8.3/6.8.3/mingw_64/bin/designer.exe"
+}

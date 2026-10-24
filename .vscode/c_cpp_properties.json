@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${default}",
+                "E:/Qt6.8.3/6.8.3/mingw_64/include",
+                "E:/Qt6.8.3/6.8.3/mingw_64/include/QtCore",
+                "E:/Qt6.8.3/6.8.3/mingw_64/include/QtGui",
+                "E:/Qt6.8.3/6.8.3/mingw_64/include/QtWidgets"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}

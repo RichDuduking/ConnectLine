@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Qt 6.8.3 MinGW 64-bit",
+    "compilers": {
+      "C": "E:/Qt6.8.3/Tools/mingw1310_64/bin/gcc.exe",
+      "CXX": "E:/Qt6.8.3/Tools/mingw1310_64/bin/g++.exe"
+    },
+    "environmentVariables": {
+      "PATH": "E:/Qt6.8.3/6.8.3/mingw_64/bin;E:/Qt6.8.3/Tools/mingw1310_64/bin;$env:PATH"
+    },
+    "cmakeSettings": {
+      "CMAKE_PREFIX_PATH": "E:/Qt6.8.3/6.8.3/mingw_64"
+    }
+  }
+]

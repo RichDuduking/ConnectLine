@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Qt: build (MinGW)",
+            "type": "shell",
+            "command": "E:\\Qt6.8.3\\Tools\\CMake_64\\bin\\cmake.exe",
+            "args": [
+                "--build",
+                "${workspaceFolder}\\builds\\GCC 13.1.0 x86_64-w64-mingw32\\Debug"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "E:\\Qt6.8.3\\6.8.3\\mingw_64\\bin;E:\\Qt6.8.3\\Tools\\mingw1310_64\\bin;${env:PATH}"
+                }
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
+            }
+        }
+    ]
+}
