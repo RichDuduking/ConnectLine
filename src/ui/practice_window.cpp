@@ -2,9 +2,11 @@
 
 #include "algorithm/polyline_algorithms.h"
 #include "diagnostics/connection_benchmark.h"
+#include "tasks/line_task_controller.h"
 #include "ui/my_graphics_view.h"
 
 #include <QColor>
+#include <QDebug>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
 #include <QHBoxLayout>
@@ -16,6 +18,14 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QVBoxLayout>
+
+namespace {
+
+// 高密度场景中，大量跨屏线段在抗锯齿下会产生极高的光栅化成本。
+// 超过该数量后优先保证交互和重绘响应，关闭抗锯齿。
+constexpr int kAntialiasingLineLimit = 20;
+
+} // namespace
 
 PracticeWindow::PracticeWindow(QWidget *parent)
     : QWidget(parent)
@@ -55,6 +65,7 @@ void PracticeWindow::buildUi()
     m_avoidValue->setMinimumWidth(40);
 
     m_connectButton = new QPushButton(QStringLiteral("连接"), this);
+    m_taskController = new LineTaskController(this);
 
     auto *topBar = new QHBoxLayout;
     topBar->addWidget(new QLabel(QStringLiteral("线条数量:"), this));
@@ -78,16 +89,34 @@ void PracticeWindow::buildUi()
     });
     connect(m_actionButton, &QPushButton::clicked, this, &PracticeWindow::toggleGeneration);
     connect(m_connectButton, &QPushButton::clicked, this, &PracticeWindow::toggleConnection);
+    connect(m_taskController,
+            &LineTaskController::generationFinished,
+            this,
+            [this](quint64 requestId, QList<QPolygonF> polylines) {
+                applyGeneratedPolylines(requestId, polylines);
+            });
+    connect(m_taskController,
+            &LineTaskController::connectionFinished,
+            this,
+            [this](quint64 requestId,
+                   diagnostics::ConnectionBenchmarkResult result) {
+                applyConnectionResult(requestId, result);
+            });
+    connect(m_taskController,
+            &LineTaskController::taskFailed,
+            this,
+            &PracticeWindow::handleTaskFailed);
 
     setWindowTitle(QStringLiteral("线段模拟器"));
     resize(1600, 900);
     m_view->centerOn(0, 0);
+    updateControlState();
 }
 
 void PracticeWindow::toggleGeneration()
 {
-    // 连接期间按钮通常已禁用，此检查用于防御外部代码直接触发该方法。
-    if (m_connected)
+    // 连接或后台任务期间按钮通常已禁用，此检查用于防御外部调用。
+    if (m_connected || m_taskOperation != TaskOperation::Idle)
         return;
 
     if (m_generated)
@@ -98,33 +127,23 @@ void PracticeWindow::toggleGeneration()
 
 void PracticeWindow::generatePolylines()
 {
+    if (m_taskOperation != TaskOperation::Idle || m_connected)
+        return;
+
     const QRectF area =
         m_view->mapToScene(m_view->viewport()->rect()).boundingRect();
     const int lineCount = m_countBox->value();
     const int avoidStrength = m_avoidSlider->value();
 
-    for (int i = 0; i < lineCount; ++i) {
-        const int pointCount = QRandomGenerator::global()->bounded(2, 7);
-        const bool tryAvoid =
-            QRandomGenerator::global()->bounded(100) < avoidStrength;
+    m_taskOperation = TaskOperation::Generating;
+    updateControlState();
 
-        QPolygonF candidate = polyline::randomPolyline(area, pointCount);
-        if (tryAvoid) {
-            // 重试次数必须有上限，避免高密度场景中无限寻找不相交位置。
-            const int maxAttempts = 100;
-            for (int attempt = 0; attempt < maxAttempts; ++attempt) {
-                if (!polyline::intersectsAny(candidate, m_polylines))
-                    break;
-                candidate = polyline::randomPolyline(area, pointCount);
-            }
-        }
-
-        m_generatedItems.append(addPolylineItem(candidate));
-        m_polylines.append(candidate);
+    m_activeRequestId = m_taskController->startGeneration(
+        area, lineCount, avoidStrength);
+    if (m_activeRequestId == 0) {
+        m_taskOperation = TaskOperation::Idle;
+        updateControlState();
     }
-
-    m_generated = true;
-    m_actionButton->setText(QStringLiteral("清除"));
 }
 
 void PracticeWindow::clearPolylines()
@@ -132,40 +151,85 @@ void PracticeWindow::clearPolylines()
     deleteGeneratedItems();
     m_polylines.clear();
     m_generated = false;
-    m_actionButton->setText(QStringLiteral("生成"));
+    updateControlState();
 }
 
 void PracticeWindow::connectPolylines()
 {
-    if (m_polylines.isEmpty() || m_generatedItems.isEmpty())
+    if (m_taskOperation != TaskOperation::Idle
+        || m_polylines.isEmpty()
+        || m_generatedItems.isEmpty()) {
         return;
+    }
 
-    // 检测函数只包裹算法调用，场景替换和绘制不计入 elapsedNanoseconds。
-    const diagnostics::ConnectionBenchmarkResult benchmark =
-        diagnostics::benchmarkConnection(m_polylines);
+    m_taskOperation = TaskOperation::Connecting;
+    updateControlState();
+
+    m_activeRequestId = m_taskController->startConnection(m_polylines);
+    if (m_activeRequestId == 0) {
+        m_taskOperation = TaskOperation::Idle;
+        updateControlState();
+    }
+}
+
+void PracticeWindow::applyGeneratedPolylines(
+    quint64 requestId,
+    const QList<QPolygonF> &polylines)
+{
+    if (requestId != m_activeRequestId
+        || m_taskOperation != TaskOperation::Generating) {
+        return;
+    }
+
+    if (polylines.isEmpty()) {
+        handleTaskFailed(requestId, QStringLiteral("生成任务未返回任何折线"));
+        return;
+    }
+
+    for (const QPolygonF &polyline : polylines) {
+        m_generatedItems.append(addPolylineItem(polyline));
+        m_polylines.append(polyline);
+    }
+
+    m_generated = true;
+    m_taskOperation = TaskOperation::Idle;
+    m_activeRequestId = 0;
+    updateControlState();
+}
+
+void PracticeWindow::applyConnectionResult(
+    quint64 requestId,
+    const diagnostics::ConnectionBenchmarkResult &benchmark)
+{
+    if (requestId != m_activeRequestId
+        || m_taskOperation != TaskOperation::Connecting) {
+        return;
+    }
+
+    // 后台任务只计算数据；工具提示和场景替换必须回到 GUI 线程执行。
     qInfo().noquote() << QStringLiteral("连接性能: %1").arg(benchmark.summary());
     m_connectButton->setToolTip(benchmark.summary());
 
     m_finalPolyline = benchmark.connectedPolyline;
-    if (m_finalPolyline.isEmpty())
+    if (m_finalPolyline.isEmpty()) {
+        handleTaskFailed(requestId, QStringLiteral("连接任务未返回有效折线"));
         return;
+    }
 
     m_savedItems.clear();
     m_savedPolylines = m_polylines;
 
-    // 仅复制路径和可见画笔属性；副本脱离场景后可在取消连接时重新加入。
+    // 暂时从场景摘下原图元，既保留全部属性，也避免在 GUI 线程复制路径数据。
     for (QGraphicsItem *item : m_generatedItems) {
         QGraphicsPathItem *pathItem = dynamic_cast<QGraphicsPathItem *>(item);
         if (!pathItem)
             continue;
 
-        auto *copy = new QGraphicsPathItem(pathItem->path());
-        copy->setPen(pathItem->pen());
-        copy->setBrush(pathItem->brush());
-        m_savedItems.append(copy);
+        m_scene->removeItem(pathItem);
+        m_savedItems.append(pathItem);
     }
 
-    // clear() 会销毁原图元，已经脱离场景的副本不受影响。
+    // 原始线段已经脱离场景；clear() 不会销毁它们。
     m_scene->clear();
     m_generatedItems.clear();
     m_polylines.clear();
@@ -174,8 +238,9 @@ void PracticeWindow::connectPolylines()
     m_polylines.append(m_finalPolyline);
 
     m_connected = true;
-    m_actionButton->setEnabled(false);
-    m_connectButton->setText(QStringLiteral("取消连接"));
+    m_taskOperation = TaskOperation::Idle;
+    m_activeRequestId = 0;
+    updateControlState();
 }
 
 void PracticeWindow::disconnectPolylines()
@@ -197,18 +262,66 @@ void PracticeWindow::disconnectPolylines()
 
     m_connected = false;
     m_generated = !m_generatedItems.isEmpty();
-    m_actionButton->setEnabled(true);
-    m_actionButton->setText(
-        m_generated ? QStringLiteral("清除") : QStringLiteral("生成"));
-    m_connectButton->setText(QStringLiteral("连接"));
+    updateControlState();
 }
 
 void PracticeWindow::toggleConnection()
 {
+    if (m_taskOperation != TaskOperation::Idle)
+        return;
+
     if (m_connected)
         disconnectPolylines();
     else
         connectPolylines();
+}
+
+void PracticeWindow::handleTaskFailed(quint64 requestId, const QString &message)
+{
+    if (requestId != m_activeRequestId)
+        return;
+
+    qWarning().noquote() << QStringLiteral("后台任务失败: %1").arg(message);
+    m_connectButton->setToolTip(
+        QStringLiteral("上次后台任务失败: %1").arg(message));
+    m_taskOperation = TaskOperation::Idle;
+    m_activeRequestId = 0;
+    updateControlState();
+}
+
+void PracticeWindow::updateControlState()
+{
+    const bool idle = m_taskOperation == TaskOperation::Idle;
+
+    m_countBox->setEnabled(idle);
+    m_avoidSlider->setEnabled(idle);
+    m_actionButton->setEnabled(idle && !m_connected);
+    m_connectButton->setEnabled(idle);
+
+    if (m_taskOperation == TaskOperation::Generating) {
+        m_actionButton->setText(QStringLiteral("生成中..."));
+        m_connectButton->setText(QStringLiteral("连接"));
+    } else if (m_taskOperation == TaskOperation::Connecting) {
+        m_actionButton->setText(
+            m_generated ? QStringLiteral("清除") : QStringLiteral("生成"));
+        m_connectButton->setText(QStringLiteral("连接中..."));
+    } else {
+        m_actionButton->setText(
+            m_generated ? QStringLiteral("清除") : QStringLiteral("生成"));
+        m_connectButton->setText(
+            m_connected ? QStringLiteral("取消连接") : QStringLiteral("连接"));
+    }
+
+    updateRenderQuality();
+}
+
+void PracticeWindow::updateRenderQuality()
+{
+    // 连接后 m_polylines 只保留一条结果线，复杂度仍应按连接前的原始线数判断。
+    const int sourceLineCount =
+        m_connected ? m_savedPolylines.size() : m_polylines.size();
+    const bool antialiasingEnabled = sourceLineCount <= kAntialiasingLineLimit;
+    m_view->setRenderHint(QPainter::Antialiasing, antialiasingEnabled);
 }
 
 void PracticeWindow::deleteGeneratedItems()

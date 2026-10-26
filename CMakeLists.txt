@@ -19,6 +19,11 @@ set(RESUME_PRACTICE_DIAGNOSTICS_SOURCES
     src/diagnostics/connection_benchmark.h
 )
 
+set(RESUME_PRACTICE_TASK_SOURCES
+    src/tasks/line_task_controller.cpp
+    src/tasks/line_task_controller.h
+)
+
 set(RESUME_PRACTICE_UI_SOURCES
     src/ui/practice_window.cpp
     src/ui/practice_window.h
@@ -29,6 +34,7 @@ qt_add_executable(ResumePractice
     src/main.cpp
     ${RESUME_PRACTICE_ALGORITHM_SOURCES}
     ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+    ${RESUME_PRACTICE_TASK_SOURCES}
     ${RESUME_PRACTICE_UI_SOURCES}
 )
 target_include_directories(ResumePractice PRIVATE src)
@@ -65,10 +71,21 @@ if (BUILD_TESTING)
     endif()
     add_test(NAME ResumePracticePolylineTest COMMAND ResumePracticePolylineTest)
 
+    qt_add_executable(ResumePracticeLineTaskTest
+        tests/line_task_controller_test.cpp
+        ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+        ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+        ${RESUME_PRACTICE_TASK_SOURCES}
+    )
+    target_include_directories(ResumePracticeLineTaskTest PRIVATE src)
+    target_link_libraries(ResumePracticeLineTaskTest PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
+    add_test(NAME ResumePracticeLineTaskTest COMMAND ResumePracticeLineTaskTest)
+
     qt_add_executable(ResumePracticeLifecycleTest
         tests/connect_cancel_lifecycle_test.cpp
         ${RESUME_PRACTICE_ALGORITHM_SOURCES}
         ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+        ${RESUME_PRACTICE_TASK_SOURCES}
         ${RESUME_PRACTICE_UI_SOURCES}
     )
     target_include_directories(ResumePracticeLifecycleTest PRIVATE src)
@@ -86,6 +103,19 @@ if (BUILD_TESTING)
     set_tests_properties(ResumePracticeLifecycleTest PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_PLUGIN_PATH=${QT_PLUGIN_DIR}"
     )
+
+    qt_add_executable(ResumePracticeUiPerformanceProbe
+        tests/ui_performance_probe.cpp
+        ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+        ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+        ${RESUME_PRACTICE_TASK_SOURCES}
+        ${RESUME_PRACTICE_UI_SOURCES}
+    )
+    target_include_directories(ResumePracticeUiPerformanceProbe PRIVATE src)
+    target_link_libraries(ResumePracticeUiPerformanceProbe PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+    if (WIN32)
+        target_link_libraries(ResumePracticeUiPerformanceProbe PRIVATE psapi)
+    endif()
 endif()
 
 if (MSVC)

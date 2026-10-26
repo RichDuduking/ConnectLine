@@ -9,15 +9,28 @@
 namespace {
 
 /**
- * @brief 在矩形区域内随机选择一个点。
+ * @brief 使用指定随机发生器在矩形区域内选择一个点。
  */
-QPointF randomPointIn(const QRectF &area)
+QPointF randomPointIn(const QRectF &area, QRandomGenerator &generator)
 {
     const double x =
-        area.left() + QRandomGenerator::global()->generateDouble() * area.width();
+        area.left() + generator.generateDouble() * area.width();
     const double y =
-        area.top() + QRandomGenerator::global()->generateDouble() * area.height();
+        area.top() + generator.generateDouble() * area.height();
     return QPointF(x, y);
+}
+
+/**
+ * @brief 使用指定随机发生器构造一条随机折线。
+ */
+QPolygonF randomPolylineWithGenerator(const QRectF &area,
+                                      int pointCount,
+                                      QRandomGenerator &generator)
+{
+    QPolygonF result;
+    for (int i = 0; i < pointCount; ++i)
+        result.append(randomPointIn(area, generator));
+    return result;
 }
 
 /**
@@ -80,12 +93,44 @@ bool polylinesIntersect(const QPolygonF &a, const QPolygonF &b)
 
 namespace polyline {
 
-// 公共接口的完整说明位于 polyline_algorithms.h。
 QPolygonF randomPolyline(const QRectF &area, int pointCount)
 {
-    QPolygonF result;
-    for (int i = 0; i < pointCount; ++i)
-        result.append(randomPointIn(area));
+    return randomPolylineWithGenerator(area, pointCount, *QRandomGenerator::global());
+}
+
+QList<QPolygonF> generatePolylines(const QRectF &area,
+                                   int lineCount,
+                                   int avoidStrength,
+                                   int maxAttempts)
+{
+    QList<QPolygonF> result;
+    if (lineCount <= 0)
+        return result;
+
+    result.reserve(lineCount);
+
+    // 每次生成任务使用独立发生器，避免多个工作线程争用同一随机状态。
+    QRandomGenerator generator(QRandomGenerator::global()->generate64());
+    const int clampedAvoidStrength = std::clamp(avoidStrength, 0, 100);
+
+    for (int i = 0; i < lineCount; ++i) {
+        const int pointCount = generator.bounded(2, 7);
+        const bool tryAvoid =
+            generator.bounded(100) < clampedAvoidStrength;
+
+        QPolygonF candidate =
+            randomPolylineWithGenerator(area, pointCount, generator);
+        if (tryAvoid) {
+            for (int attempt = 0; attempt < maxAttempts; ++attempt) {
+                if (!intersectsAny(candidate, result))
+                    break;
+                candidate = randomPolylineWithGenerator(area, pointCount, generator);
+            }
+        }
+
+        result.append(candidate);
+    }
+
     return result;
 }
 

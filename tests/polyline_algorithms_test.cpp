@@ -60,5 +60,18 @@ int main()
         return 1;
     }
 
+    const QList<QPolygonF> generated =
+        polyline::generatePolylines(QRectF(0, 0, 100, 100), 4, 50);
+    if (generated.size() != 4) {
+        qCritical() << "generation should return the requested number of lines";
+        return 1;
+    }
+    for (const QPolygonF &line : generated) {
+        if (line.size() < 2 || line.size() > 6) {
+            qCritical() << "generated line has an invalid point count";
+            return 1;
+        }
+    }
+
     return 0;
 }

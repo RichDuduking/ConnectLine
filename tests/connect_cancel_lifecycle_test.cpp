@@ -1,11 +1,16 @@
 #include "ui/practice_window.h"
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QPainter>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QThread>
+
+#include <functional>
 
 namespace {
 
@@ -46,6 +51,21 @@ bool check(bool condition, const char *message)
 }
 
 /**
+ * @brief 在不冻结 Qt 事件循环的情况下等待后台任务完成。
+ */
+bool waitUntil(const std::function<bool()> &condition, int timeoutMs = 5000)
+{
+    QElapsedTimer timer;
+    timer.start();
+
+    while (!condition() && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QThread::msleep(1);
+    }
+    return condition();
+}
+
+/**
  * @brief 覆盖生成、连接、取消、再次连接以及三线段最终链的行为。
  *
  * 测试直接构造真实的 PracticeWindow，并点击真实按钮，避免复制生产状态逻辑。
@@ -66,16 +86,29 @@ bool exerciseConnectCancelLifecycle(PracticeWindow &window)
     countBox->setValue(2);
     actionButton->click();
 
-    if (!check(pathItemCount(scene) == 2, "two original segments should be generated"))
+    if (!check(pathItemCount(scene) == 0 && !actionButton->isEnabled(),
+               "generation should start asynchronously")
+        || !waitUntil([&] {
+               return pathItemCount(scene) == 2 && actionButton->isEnabled();
+           })) {
+        qCritical() << "asynchronous generation did not complete";
         return false;
+    }
+    if (!check(view->renderHints().testFlag(QPainter::Antialiasing),
+               "low-density scenes should keep antialiasing")) {
+        return false;
+    }
 
     connectButton->click();
-    if (!check(pathItemCount(scene) == 1,
-               "connecting should replace the originals with one line")
-        || !check(connectButton->text() == QStringLiteral("取消连接"),
-                  "connect button should enter connected mode")
+    if (!check(pathItemCount(scene) == 2 && !connectButton->isEnabled(),
+               "connection should start asynchronously")
+        || !waitUntil([&] {
+               return pathItemCount(scene) == 1
+                   && connectButton->text() == QStringLiteral("取消连接");
+           })
         || !check(connectButton->toolTip().contains(QStringLiteral("连接耗时")),
                   "connect button should expose the benchmark summary")) {
+        qCritical() << "asynchronous connection did not complete";
         return false;
     }
 
@@ -101,8 +134,9 @@ bool exerciseConnectCancelLifecycle(PracticeWindow &window)
     }
 
     connectButton->click();
-    if (!check(pathItemCount(scene) == 1,
-               "cancelled originals should be connectable again")) {
+    if (!waitUntil([&] { return pathItemCount(scene) == 1; })
+        || !check(connectButton->text() == QStringLiteral("取消连接"),
+                  "cancelled originals should be connectable again")) {
         return false;
     }
 
@@ -117,6 +151,13 @@ bool exerciseConnectCancelLifecycle(PracticeWindow &window)
     countBox->setValue(3);
     actionButton->click();
 
+    if (!waitUntil([&] {
+            return pathItemCount(scene) == 3 && actionButton->isEnabled();
+        })) {
+        qCritical() << "second asynchronous generation did not complete";
+        return false;
+    }
+
     int originalElementCount = 0;
     for (QGraphicsItem *item : scene->items()) {
         QGraphicsPathItem *pathItem = dynamic_cast<QGraphicsPathItem *>(item);
@@ -130,14 +171,50 @@ bool exerciseConnectCancelLifecycle(PracticeWindow &window)
     }
 
     connectButton->click();
+    if (!waitUntil([&] { return pathItemCount(scene) == 1; })) {
+        qCritical() << "final asynchronous connection did not complete";
+        return false;
+    }
+
     QGraphicsPathItem *connectedItem = nullptr;
     if (pathItemCount(scene) == 1)
         connectedItem = dynamic_cast<QGraphicsPathItem *>(scene->items().first());
 
-    return check(connectedItem != nullptr,
-                 "three lines should produce one connected path")
-        && check(connectedItem->path().elementCount() == originalElementCount,
-                 "the connected path should contain every original point exactly once");
+    if (!check(connectedItem != nullptr,
+               "three lines should produce one connected path")
+        || !check(connectedItem->path().elementCount() == originalElementCount,
+                  "the connected path should contain every original point exactly once")) {
+        return false;
+    }
+
+    // 高密度场景关闭抗锯齿，避免大量跨屏线段占用数秒进行光栅化。
+    connectButton->click();
+    actionButton->click();
+    countBox->setValue(500);
+    actionButton->click();
+
+    if (!waitUntil([&] {
+            return pathItemCount(scene) == 500 && actionButton->isEnabled();
+        }, 10000)) {
+        qCritical() << "500-line generation did not complete";
+        return false;
+    }
+
+    if (!check(!view->renderHints().testFlag(QPainter::Antialiasing),
+               "high-density scenes should disable antialiasing")) {
+        return false;
+    }
+
+    connectButton->click();
+    if (!waitUntil([&] {
+            return connectButton->text() == QStringLiteral("取消连接");
+        }, 10000)) {
+        qCritical() << "500-line connection did not complete";
+        return false;
+    }
+
+    return check(!view->renderHints().testFlag(QPainter::Antialiasing),
+                 "connected high-density scenes should stay responsive");
 }
 
 } // namespace

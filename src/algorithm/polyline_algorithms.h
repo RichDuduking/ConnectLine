@@ -7,12 +7,29 @@
 namespace polyline {
 
 /**
- * @brief 在指定矩形区域内生成一条随机折线。
+ * @brief 使用全局随机发生器生成一条随机折线。
  * @param area 随机点的取值范围，通常为当前视图对应的场景区域。
  * @param pointCount 折线包含的顶点数；小于等于 0 时返回空折线。
  * @return 按生成顺序排列的顶点集合。
  */
 QPolygonF randomPolyline(const QRectF &area, int pointCount);
+
+/**
+ * @brief 在指定区域内生成一组互不主动相交的随机折线。
+ *
+ * 当某条线命中避交概率时，最多重试 maxAttempts 次。函数只计算几何数据，
+ * 不访问任何 GUI 对象，因此可以在 QRunnable 工作线程中调用。
+ *
+ * @param area 随机点范围。
+ * @param lineCount 要生成的折线数量。
+ * @param avoidStrength 0 到 100 的避交强度，表示尝试避交的概率百分比。
+ * @param maxAttempts 单条线尝试寻找无相交结果的次数上限。
+ * @return 生成的折线集合；每条线包含 2 到 6 个点。
+ */
+QList<QPolygonF> generatePolylines(const QRectF &area,
+                                   int lineCount,
+                                   int avoidStrength,
+                                   int maxAttempts = 100);
 
 /**
  * @brief 判断候选折线是否与任意已有折线相交。
