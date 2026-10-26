@@ -9,12 +9,39 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 qt_standard_project_setup()
 
-qt_add_executable(ResumePractice
-    main.cpp
-    MyGraphicsView.h
+set(RESUME_PRACTICE_ALGORITHM_SOURCES
+    src/algorithm/polyline_algorithms.cpp
+    src/algorithm/polyline_algorithms.h
 )
 
+set(RESUME_PRACTICE_DIAGNOSTICS_SOURCES
+    src/diagnostics/connection_benchmark.cpp
+    src/diagnostics/connection_benchmark.h
+)
+
+set(RESUME_PRACTICE_TASK_SOURCES
+    src/tasks/line_task_controller.cpp
+    src/tasks/line_task_controller.h
+)
+
+set(RESUME_PRACTICE_UI_SOURCES
+    src/ui/practice_window.cpp
+    src/ui/practice_window.h
+    src/ui/my_graphics_view.h
+)
+
+qt_add_executable(ResumePractice
+    src/main.cpp
+    ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+    ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+    ${RESUME_PRACTICE_TASK_SOURCES}
+    ${RESUME_PRACTICE_UI_SOURCES}
+)
+target_include_directories(ResumePractice PRIVATE src)
 target_link_libraries(ResumePractice PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+if (WIN32)
+    target_link_libraries(ResumePractice PRIVATE psapi)
+endif()
 
 set_target_properties(ResumePractice PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
@@ -32,12 +59,40 @@ install(TARGETS ResumePractice
 
 include(CTest)
 if (BUILD_TESTING)
+    qt_add_executable(ResumePracticePolylineTest
+        tests/polyline_algorithms_test.cpp
+        ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+        ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+    )
+    target_include_directories(ResumePracticePolylineTest PRIVATE src)
+    target_link_libraries(ResumePracticePolylineTest PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
+    if (WIN32)
+        target_link_libraries(ResumePracticePolylineTest PRIVATE psapi)
+    endif()
+    add_test(NAME ResumePracticePolylineTest COMMAND ResumePracticePolylineTest)
+
+    qt_add_executable(ResumePracticeLineTaskTest
+        tests/line_task_controller_test.cpp
+        ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+        ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+        ${RESUME_PRACTICE_TASK_SOURCES}
+    )
+    target_include_directories(ResumePracticeLineTaskTest PRIVATE src)
+    target_link_libraries(ResumePracticeLineTaskTest PRIVATE Qt${QT_VERSION_MAJOR}::Gui)
+    add_test(NAME ResumePracticeLineTaskTest COMMAND ResumePracticeLineTaskTest)
+
     qt_add_executable(ResumePracticeLifecycleTest
         tests/connect_cancel_lifecycle_test.cpp
-        MyGraphicsView.h
+        ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+        ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+        ${RESUME_PRACTICE_TASK_SOURCES}
+        ${RESUME_PRACTICE_UI_SOURCES}
     )
-
+    target_include_directories(ResumePracticeLifecycleTest PRIVATE src)
     target_link_libraries(ResumePracticeLifecycleTest PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+    if (WIN32)
+        target_link_libraries(ResumePracticeLifecycleTest PRIVATE psapi)
+    endif()
 
     add_test(NAME ResumePracticeLifecycleTest COMMAND ResumePracticeLifecycleTest)
 
@@ -48,6 +103,19 @@ if (BUILD_TESTING)
     set_tests_properties(ResumePracticeLifecycleTest PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_PLUGIN_PATH=${QT_PLUGIN_DIR}"
     )
+
+    qt_add_executable(ResumePracticeUiPerformanceProbe
+        tests/ui_performance_probe.cpp
+        ${RESUME_PRACTICE_ALGORITHM_SOURCES}
+        ${RESUME_PRACTICE_DIAGNOSTICS_SOURCES}
+        ${RESUME_PRACTICE_TASK_SOURCES}
+        ${RESUME_PRACTICE_UI_SOURCES}
+    )
+    target_include_directories(ResumePracticeUiPerformanceProbe PRIVATE src)
+    target_link_libraries(ResumePracticeUiPerformanceProbe PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+    if (WIN32)
+        target_link_libraries(ResumePracticeUiPerformanceProbe PRIVATE psapi)
+    endif()
 endif()
 
 if (MSVC)
